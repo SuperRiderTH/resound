@@ -8,7 +8,17 @@
 import sys
 import requests
 import xmltodict
+import plexapi
+
 from plexapi.server import PlexServer
+from plexapi.exceptions import BadRequest, NotFound, Unauthorized
+from packaging import version
+
+
+# Recent versions of Plex return a status code when deleting a playlist
+# that the PlexAPI doesn't understand until a version after 4.1.2.
+# We want to catch that and check it if our version is at or lower than that.
+PLEXAPI_CHECK_204 = version.parse(plexapi.VERSION) <= version.parse("4.1.2")
 
 
 # Note: I am disabling warnings for urllib3 because we are making an unverified
@@ -129,7 +139,6 @@ def init_users():
     # Get all the users on the server for verification, or to use if whitelist is empty.
     plex_users = get_user_tokens(PLEX_SERVER.machineIdentifier)
 
-    print ("")
     print ("========================================")
     print ("Users")
     print ("========================================")
@@ -197,17 +206,29 @@ def init_playlists():
             if playlist.title.startswith(SYNC_CHARACTER):
                 print("Playlist '" + playlist.title + "' is a synced playlist, will remove. ")
                 PLAYLISTS_BAD.append(user + PLAYLIST_DELIMITER + playlist.title)
+                #print(playlist)
                 continue
 
-            # Get the items in the playlist, check if it actually has items.
+            # Get the items in the playlist, to check if it actually has items.
             playlistItems = playlist.items()
 
-            if not playlistItems:
+            # We also want to ignore smart playlists.
+            if playlist.smart :
+                print("Playlist " + playlist.title + " is a smart playlist, ignoring...")
+            elif not playlistItems:
                 print("Playlist " + playlist.title + " is empty.")
             else:
                 print("Copying " + playlist.title)
                 PLAYLISTS_GOOD.append(user + PLAYLIST_DELIMITER + playlist.title)
                 PLAYLISTS_GOOD_ITEMS.append(playlistItems)
+                #for x in playlistItems:
+                #    print(x)
+                #    print(x.guid)
+                #    print(x.title)
+                #    print(x.artist().title)
+                #    print(x.addedAt)
+                #    print(x.viewCount)
+            #print(playlist)
 
     print ("========================================")
     print ("Playlists to remove:")
@@ -235,7 +256,20 @@ def handle_playlists():
         print("Removing '" + playlist + "' from " + user)
 
         if not ARG_DRYRUN:
-            USER_SERVER[USERS.index(user)].playlist(playlist).delete()
+
+            # We grab a potential exception to see if it is actually alright.
+            if PLEXAPI_CHECK_204:
+                try:
+                    USER_SERVER[USERS.index(user)].playlist(playlist).delete()
+                except BadRequest as e:
+                    message = getattr(e, 'message', str(e))
+                    if message.startswith("(204)"):
+                        pass
+                    else:
+                        raise BadRequest(message)
+            else:
+                USER_SERVER[USERS.index(user)].playlist(playlist).delete()
+            
 
     if ARG_CLEAN:
         return False
@@ -258,6 +292,8 @@ def handle_playlists():
 
 def main():
 
+    print ("")
+
     global ARG_CLEAN, ARG_DRYRUN
 
     # Check for any arguments.
@@ -274,6 +310,10 @@ def main():
                 print ("Dry run, will not modify playlists.")
                 print ("========================================")
 
+    if PLEXAPI_CHECK_204:
+        print ("PlexAPI version is <= 4.1.2, will ignore status code 204 when deleting.")
+        print ("For details:\nhttps://github.com/pkkid/python-plexapi/pull/580\n")
+
 
     if init_users():
         return
@@ -288,3 +328,4 @@ if __name__ == "__main__":
     main()
     print ("========================================")
     print("Done.")
+    
