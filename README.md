@@ -20,5 +20,5 @@ Example: `python3 resound.py clean`
 
 ## Preview
 
-![Terminal Output Preview](https://i.imgur.com/ySFgLvU.png)
+![Terminal Output Preview](https://i.imgur.com/K7wvimp.png)
 ![Plexamp Preview](https://i.imgur.com/V6bcr63.jpg)
