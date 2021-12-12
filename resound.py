@@ -46,10 +46,10 @@ USER_WHITELIST  = []
 
 # If you want to include the server owner in syncing, this must be set to True. 
 INCLUDE_SERVER_OWNER    = True
-SERVER_OWNER_USER       = 'ServerOwner' 
+SERVER_OWNER_USER       = 'ServerOwner'
 # Note: This isn't actually the user.
 # It is just used for this script so it can be whatever you want.
-# Can also have an alternative name.
+# Can also have an alternative name, example: "ServerOwner,Name".
 
 
 ### Sync Settings ###
@@ -58,10 +58,6 @@ SERVER_OWNER_USER       = 'ServerOwner'
 # should be ignored, or was made by this script on a prior run.
 IGNORE_CHARACTER        = "!"
 SYNC_CHARACTER          = "|"
-
-# Used by the script internally for playlist handling.
-# Can be changed, but should not be an issue.
-PLAYLIST_DELIMITER      = "-/-"
 
 
 ### Variables that should not be touched by humans ##
@@ -72,10 +68,6 @@ USER_SERVER     = []
 
 PLEX_SERVER     = PlexServer(PLEX_URL, PLEX_TOKEN)
 MY_PLEX         = PLEX_SERVER.myPlexAccount()
-
-PLAYLISTS_GOOD          = []
-PLAYLISTS_GOOD_ITEMS    = []
-PLAYLISTS_BAD           = []
 
 ARG_CLEAN               = False
 ARG_DRYRUN              = False
@@ -143,6 +135,10 @@ def init_users():
     print ("Users")
     print ("========================================")
 
+    for x in plex_users:
+        print(x)
+    print ("------------------------------")
+
     # Use the list of users if there is no whitelist.
     if len(USER_WHITELIST) == 0:
         for x in plex_users:
@@ -190,23 +186,24 @@ def init_users():
 
     return False
 
-def init_playlists():
+
+def get_owner_user(playlistTitle):
+    for name in NAMES:
+        if name == playlistTitle.split(": ")[0].strip(SYNC_CHARACTER):
+            return USERS[NAMES.index(name)]
+    assert "User not found!"
+
+def process_playlists():
 
     for user in USERS:
-        userIndex = USERS.index(user)
 
         print ("========================================")
-        print (NAMES[userIndex] + " - " + user)
+        print (NAMES[USERS.index(user)] + " - " + user)
+        print ("========================================")
 
-        # Check the playlists for our special characters.
-        for playlist in USER_SERVER[userIndex].playlists():
+        for playlist in USER_SERVER[USERS.index(user)].playlists():
             if playlist.title.startswith(IGNORE_CHARACTER):
                 print("Ignoring " + playlist.title)
-                continue
-            if playlist.title.startswith(SYNC_CHARACTER):
-                print("Playlist '" + playlist.title + "' is a synced playlist, will remove. ")
-                PLAYLISTS_BAD.append(user + PLAYLIST_DELIMITER + playlist.title)
-                #print(playlist)
                 continue
 
             # Get the items in the playlist, to check if it actually has items.
@@ -215,79 +212,131 @@ def init_playlists():
             # We also want to ignore smart playlists.
             if playlist.smart :
                 print("Playlist " + playlist.title + " is a smart playlist, ignoring...")
+            
+            # And also ignore empty playlists.
             elif not playlistItems:
                 print("Playlist " + playlist.title + " is empty.")
+
+            # If we find a synced playlist, we want to see if it exists.
             else:
-                print("Copying " + playlist.title)
-                PLAYLISTS_GOOD.append(user + PLAYLIST_DELIMITER + playlist.title)
-                PLAYLISTS_GOOD_ITEMS.append(playlistItems)
-                #for x in playlistItems:
-                #    print(x)
-                #    print(x.guid)
-                #    print(x.title)
-                #    print(x.artist().title)
-                #    print(x.addedAt)
-                #    print(x.viewCount)
-            #print(playlist)
+                if playlist.title.startswith(SYNC_CHARACTER):
 
-    print ("========================================")
-    print ("Playlists to remove:")
-    print (PLAYLISTS_BAD)
+                    if ARG_CLEAN:
+                        if not ARG_DRYRUN:
+                            print("Removing playlist: " + playlist.title)
+                        else:
+                            print("Dry run, not removing: " + playlist.title)
+                    else:
+                        print("Checking if synced playlist exists: " + playlist.title)
+                    
+                    # We want to see if the playlist exists in the original user.
+                    # If it does not, we just remove it.
+                    playlistExists = False
+                    owner = get_owner_user(playlist.title)
 
-    if ARG_CLEAN == False:
-        print ("========================================")
-        print ("Playlists to copy:")
-        print (PLAYLISTS_GOOD)
+                    # We need to see if the owner of the playlist actually exists,
+                    # this will handle any synced playlists from removed users.
+                    if owner in USERS:
+                        for playlistCheck in USER_SERVER[USERS.index(owner)].playlists():
+                            if playlist.title.split(": ")[1] == playlistCheck.title:
+                                playlistExists = True
+                                pass
+                            pass
 
-    print ("")
+                    # If we are cleaning up the playlists, we just pretend they all don't exist.
+                    if ARG_CLEAN:
+                        playlistExists = False
 
-    return False
-
-def handle_playlists():
-
-    if len(PLAYLISTS_GOOD) != len(PLAYLISTS_GOOD_ITEMS):
-        print("Number of playlists do not match number of items, stopping.")
-        return True
-
-    # Remove the bad playlists.
-    for x in PLAYLISTS_BAD:
-        user = x.split(PLAYLIST_DELIMITER)[0].strip(SYNC_CHARACTER)
-        playlist = x.split(PLAYLIST_DELIMITER)[1]
-        print("Removing '" + playlist + "' from " + user)
-
-        if not ARG_DRYRUN:
-
-            # We grab a potential exception to see if it is actually alright.
-            if PLEXAPI_CHECK_204:
-                try:
-                    USER_SERVER[USERS.index(user)].playlist(playlist).delete()
-                except BadRequest as e:
-                    message = getattr(e, 'message', str(e))
-                    if message.startswith("(204)"):
+                    # If the play list exists, we move on and don't 
+                    if playlistExists:
                         pass
                     else:
-                        raise BadRequest(message)
-            else:
-                USER_SERVER[USERS.index(user)].playlist(playlist).delete()
-            
+                        # We grab a potential exception to see if it is actually alright.
+                        if PLEXAPI_CHECK_204:
+                            try:
+                                USER_SERVER[USERS.index(user)].playlist(playlist.title).delete()
+                            except BadRequest as e:
+                                message = getattr(e, 'message', str(e))
+                                if message.startswith("(204)"):
+                                    pass
+                                else:
+                                    raise BadRequest(message)
+                        else:
+                            if not ARG_DRYRUN:
+                                USER_SERVER[USERS.index(user)].playlist(playlist.title).delete()
+                                if not ARG_CLEAN:
+                                    print("Playlist not found, deleted playlist...")
+                            else:
+                                print("Playlist not found.")
+                                
+                # We found an actual playlist, so we want to sync it with other users.
+                else:
+                    if ARG_CLEAN:
+                        pass
+                    else:
+                        print ("========================================")
+                        print("Found: " + playlist.title)
+                        print ("========================================")
 
-    if ARG_CLEAN:
-        return False
+                        for userCheck in USERS:
 
-    print ("------------------------------")
-    # Recreate the good playlists on each user.
-    for playlist in PLAYLISTS_GOOD:
-        owner = playlist.split(PLAYLIST_DELIMITER)[0].strip(SYNC_CHARACTER)
-        playlist_name = playlist.split(PLAYLIST_DELIMITER)[1]
+                            if USERS.index(userCheck) != USERS.index(user):
 
-        for user in USERS:
-            if not playlist.startswith(user):
-                playlist_display_name = ( SYNC_CHARACTER + NAMES[USERS.index(owner)] + ": " + playlist_name )
-                print ("Creating '" + playlist_display_name + "' for " + user)
-                if not ARG_DRYRUN:
-                    USER_SERVER[USERS.index(user)].createPlaylist( playlist_display_name, PLAYLISTS_GOOD_ITEMS[PLAYLISTS_GOOD.index(playlist)])
-    
-    return False
+                                # We need to find the playlist, otherwise we create it.
+                                playlistExists = False
+
+                                playlistCheckName = SYNC_CHARACTER + NAMES[USERS.index(user)] + ": " + playlist.title
+
+                                for playlistCheck in USER_SERVER[USERS.index(userCheck)].playlists():
+                                    if playlistCheckName == playlistCheck.title:
+                                        playlistExists = True
+                                        targetPlaylist = playlistCheck
+                                        pass
+                                    pass
+                                pass
+
+                                # If the playlist exists, we check the items and add or remove them as necessary.
+                                if playlistExists:
+                                    print ("------------------------------")
+                                    print("Syncing playlist for: " + NAMES[USERS.index(userCheck)])
+                                    print ("------------------------------")
+                                    
+                                    
+                                    # Remove items if not found in original playlist.
+                                    for item in targetPlaylist.items():
+                                        if item not in playlist.items():
+                                            if not ARG_DRYRUN:
+                                                print('- "' + item.title + '"' + " not found in playlist! Removing...")
+                                                targetPlaylist.removeItem(item)
+                                                pass
+                                            else:
+                                                print('- "' + item.title + '"' + " not found in playlist!")
+                                            pass
+                                        pass
+
+                                    # Add items if not found in synced playlist.
+                                    for item in playlist.items():
+                                        if item not in targetPlaylist.items():
+                                            if not ARG_DRYRUN:
+                                                print('- "' + item.title + '"'  + " not found in playlist! Adding...")
+                                                targetPlaylist.addItems(item)
+                                                pass
+                                            else:
+                                                print('- "' + item.title + '"'  + " not found in playlist!")
+                                            pass
+                                        pass
+
+                                # Playlist does not exist, so we just clone it in it's entirety.
+                                else:
+                                    
+                                    if not ARG_DRYRUN:
+                                        print ("Creating '" + playlistCheckName + "' for " + NAMES[USERS.index(userCheck)])
+                                        USER_SERVER[USERS.index(userCheck)].createPlaylist( playlistCheckName, playlist.items() )
+                                        pass
+                                    else:
+                                        print ("Dry run, not creating '" + playlistCheckName + "' for " + NAMES[USERS.index(userCheck)])
+                                    pass
+                            pass
 
 
 def main():
@@ -301,25 +350,27 @@ def main():
         for x in sys.argv:
             if x == "clean":
                 ARG_CLEAN = True
-                print ("========================================")
-                print ("Clean argument detected, just removing playlists.")
-                print ("========================================")
             if x == "dryrun":
                 ARG_DRYRUN = True
-                print ("========================================")
-                print ("Dry run, will not modify playlists.")
-                print ("========================================")
+
+    if ARG_CLEAN:
+        print ("========================================")
+        print ("Clean argument detected, just removing playlists.")
+        print ("========================================")
+
+    if ARG_DRYRUN:
+        print ("========================================")
+        print ("Dry run, will not modify playlists.")
+        print ("========================================")
 
     if PLEXAPI_CHECK_204:
         print ("PlexAPI version is <= 4.1.2, will ignore status code 204 when deleting.")
         print ("For details:\nhttps://github.com/pkkid/python-plexapi/pull/580\n")
 
-
     if init_users():
         return
-    if init_playlists():
-        return
-    if handle_playlists():
+
+    if process_playlists():
         return
 
     return
@@ -328,4 +379,3 @@ if __name__ == "__main__":
     main()
     print ("========================================")
     print("Done.")
-    
