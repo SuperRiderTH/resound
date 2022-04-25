@@ -64,7 +64,7 @@ SYNC_CHARACTER          = "|"
 
 MAJOR_VERSION = 2
 MINOR_VERSION = 0
-PATCH_VERSION = 1
+PATCH_VERSION = 2
 
 VERSION = f"{MAJOR_VERSION}.{MINOR_VERSION}.{PATCH_VERSION}"
 
@@ -241,7 +241,7 @@ def process_playlists():
                     # this will handle any synced playlists from removed users.
                     if owner in USERS:
                         for playlistCheck in USER_SERVER[USERS.index(owner)].playlists():
-                            if playlist.title.endswith(playlistCheck.title):
+                            if playlist.title.split(": ")[1] == (playlistCheck.title):
                                 playlistExists = True
                                 pass
                             pass
