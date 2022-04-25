@@ -62,6 +62,12 @@ SYNC_CHARACTER          = "|"
 
 ### Variables that should not be touched by humans ##
 
+MAJOR_VERSION = 2
+MINOR_VERSION = 0
+PATCH_VERSION = 1
+
+VERSION = f"{MAJOR_VERSION}.{MINOR_VERSION}.{PATCH_VERSION}"
+
 USERS           = []
 NAMES           = []
 USER_SERVER     = []
@@ -135,16 +141,13 @@ def init_users():
     print ("Users")
     print ("========================================")
 
-    for x in plex_users:
-        print(x)
-    print ("------------------------------")
-
     # Use the list of users if there is no whitelist.
     if len(USER_WHITELIST) == 0:
         for x in plex_users:
             USER_WHITELIST.append(x)
     else:
-        print("Whitelist exists, syncing users:")
+        print ("------------------------------")
+        print ("Whitelist exists, syncing users:")
         print ("------------------------------")
 
     # If we are including the server owner, we want to add them to the whitelist.
@@ -166,7 +169,7 @@ def init_users():
     # Verify that all the users actually exist in the server.
     for x in USERS:
         if x in plex_users or x == SERVER_OWNER_USER:
-            print (x)
+            print(x)
         else:
             print ('User "' + x + '" not found! Aborting.')
             return True
@@ -238,7 +241,7 @@ def process_playlists():
                     # this will handle any synced playlists from removed users.
                     if owner in USERS:
                         for playlistCheck in USER_SERVER[USERS.index(owner)].playlists():
-                            if playlist.title.split(": ")[1] == playlistCheck.title:
+                            if playlist.title.endswith(playlistCheck.title):
                                 playlistExists = True
                                 pass
                             pass
@@ -307,7 +310,7 @@ def process_playlists():
                                         if item not in playlist.items():
                                             if not ARG_DRYRUN:
                                                 print('- "' + item.title + '"' + " not found in playlist! Removing...")
-                                                targetPlaylist.removeItem(item)
+                                                targetPlaylist.removeItems(item)
                                                 pass
                                             else:
                                                 print('- "' + item.title + '"' + " not found in playlist!")
@@ -331,7 +334,7 @@ def process_playlists():
                                     
                                     if not ARG_DRYRUN:
                                         print ("Creating '" + playlistCheckName + "' for " + NAMES[USERS.index(userCheck)])
-                                        USER_SERVER[USERS.index(userCheck)].createPlaylist( playlistCheckName, playlist.items() )
+                                        USER_SERVER[USERS.index(userCheck)].createPlaylist( playlistCheckName, items=playlist.items() )
                                         pass
                                     else:
                                         print ("Dry run, not creating '" + playlistCheckName + "' for " + NAMES[USERS.index(userCheck)])
@@ -342,6 +345,10 @@ def process_playlists():
 def main():
 
     print ("")
+
+    print ("Resound Version: " + VERSION)
+    print ("Plex Server Version: " + PLEX_SERVER.version)
+    print ("Python-PlexAPI Version : " + plexapi.VERSION)
 
     global ARG_CLEAN, ARG_DRYRUN
 
